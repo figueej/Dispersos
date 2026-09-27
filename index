@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Test — grafo reactivo con imágenes</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<style>
+:root{
+  --bg:#0d0d0d; --line:#333; --panel:#1a1a1a; --text:#eee; --muted:#999; --accent:#e07856;
+  box-sizing:border-box; padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: light){
+  :root:not([data-theme="dark"]){ --bg:#f2f2f2; --line:#ccc; --panel:#fff; --text:#111; --muted:#666; }
+}
+:root[data-theme="light"]{ --bg:#f2f2f2; --line:#ccc; --panel:#fff; --text:#111; --muted:#666; }
+*{box-sizing:border-box;}
+body{ margin:0; height:100vh; color:var(--text); font-family:Georgia,serif; overflow:hidden;
+  background-color:var(--bg);
+  background-image:
+    repeating-linear-gradient(0deg, var(--line) 0 1px, transparent 1px 40px),
+    repeating-linear-gradient(90deg, var(--line) 0 1px, transparent 1px 40px);
+}
+#wrap{display:flex; height:100%;}
+#graph-wrap{flex:1; position:relative; min-width:0;}
+svg{width:100%; height:100%; display:block; cursor:grab;}
+.link{ stroke:var(--line); stroke-width:1.4px; }
+.link.dim{ opacity:.15; }
+.node-label{ font-size:11px; fill:var(--text); pointer-events:none; }
+.node-label.dim{ opacity:.2; }
+img.dim{ opacity:.2; }
+#panel{ width:280px; background:var(--panel); border-left:1px solid var(--line);
+  padding:20px; display:flex; flex-direction:column; gap:12px; overflow-y:auto; }
+#panel img{ width:100%; border-radius:6px; }
+#panel h2{ margin:0; font-size:18px; }
+#panel p{ margin:0; font-size:13px; color:var(--muted); line-height:1.5; }
+.placeholder{ color:var(--muted); font-size:14px; text-align:center; margin-top:40px; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="graph-wrap"><svg id="svg"></svg></div>
+  <div id="panel"><p class="placeholder">Toca un nodo. Pasa el ratón para ver sus conexiones.</p></div>
+</div>
+
+<script>
+function placeholderImg(color,label){
+  const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'>
+    <rect width='140' height='140' fill='${color}'/>
+    <text x='70' y='75' font-size='16' fill='white' text-anchor='middle' font-family='Georgia'>${label}</text></svg>`;
+  return "data:image/svg+xml;base64," + btoa(svg);
+}
+
+const nodes = [
+  {id:"villasavoye", title:"Villa Savoye", img:placeholderImg("#a8402f","foto"), desc:"Le Corbusier, 1931. Planta libre y pilotis."},
+  {id:"barcelonapav", title:"Pabellón Barcelona", img:placeholderImg("#5a5a5a","esquema"), desc:"Mies van der Rohe, 1929. Planta fluida."},
+  {id:"farnsworth", title:"Casa Farnsworth", img:placeholderImg("#3f8f5e","foto"), desc:"Mies van der Rohe, 1951. Caja de vidrio elevada."},
+  {id:"sagrada", title:"Sagrada Familia", img:placeholderImg("#c98a2b","esquema"), desc:"Gaudí, 1882–. Estructura arbórea."},
+  {id:"batllo", title:"Casa Batlló", img:placeholderImg("#c98a2b","foto"), desc:"Gaudí, 1904. Fachada ondulante."},
+  {id:"seagram", title:"Seagram Building", img:placeholderImg("#5a5a5a","esquema"), desc:"Mies van der Rohe, 1958. Torre corporativa."}
+];
+const links = [
+  {source:"villasavoye", target:"barcelonapav"},
+  {source:"barcelonapav", target:"farnsworth"},
+  {source:"barcelonapav", target:"sagrada"},
+  {source:"sagrada", target:"batllo"},
+  {source:"barcelonapav", target:"seagram"},
+  {source:"farnsworth", target:"seagram"}
+];
+
+const svg = d3.select("#svg");
+const g = svg.append("g");
+svg.call(d3.zoom().scaleExtent([0.3,4]).on("zoom", e=>g.attr("transform", e.transform)));
+
+function dims(){ const w = document.getElementById('graph-wrap').clientWidth, h = window.innerHeight; return [w,h]; }
+let [W,H] = dims();
+
+const sim = d3.forceSimulation(nodes)
+  .velocityDecay(0.65)
+  .alphaDecay(0.04)
+  .force("link", d3.forceLink(links).id(d=>d.id).distance(130).strength(0.5))
+  .force("charge", d3.forceManyBody().strength(-120))
+  .force("center", d3.forceCenter(W/2, H/2))
+  .force("collide", d3.forceCollide(45));
+
+const linkSel = g.append("g").selectAll("line").data(links).join("line").attr("class","link");
+
+const nodeG = g.append("g").selectAll("g").data(nodes).join("g")
+  .style("cursor","pointer")
+  .call(d3.drag()
+    .on("start",(e,d)=>{ if(!e.active) sim.alphaTarget(0.12).restart(); d.fx=d.x; d.fy=d.y; })
+    .on("drag",(e,d)=>{ d.fx=e.x; d.fy=e.y; })
+    .on("end",(e,d)=>{ if(!e.active) sim.alphaTarget(0); d.fx=null; d.fy=null; }));
+
+nodeG.append("clipPath").attr("id",d=>"clip-"+d.id)
+  .append("circle").attr("r",22);
+
+nodeG.append("image")
+  .attr("href", d=>d.img)
+  .attr("x",-22).attr("y",-22).attr("width",44).attr("height",44)
+  .attr("clip-path", d=>`url(#clip-${d.id})`);
+
+nodeG.append("circle").attr("r",22).attr("fill","none")
+  .attr("stroke","var(--muted)").attr("stroke-width",2);
+
+nodeG.append("text").attr("class","node-label")
+  .attr("y",36).attr("text-anchor","middle").text(d=>d.title);
+
+function neighborIds(id){
+  const s = new Set([id]);
+  links.forEach(l=>{
+    const a = l.source.id||l.source, b = l.target.id||l.target;
+    if(a===id) s.add(b); if(b===id) s.add(a);
+  });
+  return s;
+}
+
+nodeG.on("mouseenter",(e,d)=>{
+  const near = neighborIds(d.id);
+  nodeG.select("image").classed("dim", n=>!near.has(n.id));
+  nodeG.select("text").classed("dim", n=>!near.has(n.id));
+  linkSel.classed("dim", l=>{
+    const a=l.source.id||l.source, b=l.target.id||l.target;
+    return !(a===d.id||b===d.id);
+  });
+}).on("mouseleave",()=>{
+  nodeG.select("image").classed("dim",false);
+  nodeG.select("text").classed("dim",false);
+  linkSel.classed("dim",false);
+});
+
+nodeG.on("click",(e,d)=>{
+  document.getElementById("panel").innerHTML = `
+    <img src="${d.img}"><h2>${d.title}</h2><p>${d.desc}</p>`;
+});
+
+sim.on("tick",()=>{
+  linkSel.attr("x1",d=>d.source.x).attr("y1",d=>d.source.y)
+         .attr("x2",d=>d.target.x).attr("y2",d=>d.target.y);
+  nodeG.attr("transform", d=>`translate(${d.x},${d.y})`);
+});
+
+window.addEventListener("resize",()=>{
+  [W,H] = dims();
+  sim.force("center", d3.forceCenter(W/2,H/2));
+  sim.alpha(0.3).restart();
+});
+</script>
+</body>
+</html>
